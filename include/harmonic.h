@@ -62,6 +62,9 @@ struct harmonic {
   int has_tl; /**< do we want \f$ C_l^{Tl}\f$? */
   int has_dl; /**< do we want \f$ C_l^{dl}\f$? */
 
+  int has_tilde_m_nu;
+  double tilde_m_nu;
+
   int index_ct_tt; /**< index for type \f$ C_l^{TT} \f$*/
   int index_ct_ee; /**< index for type \f$ C_l^{EE} \f$*/
   int index_ct_te; /**< index for type \f$ C_l^{TE} \f$*/

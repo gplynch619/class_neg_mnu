@@ -4674,6 +4674,14 @@ int input_read_parameters_spectra(struct file_content * pfc,
     }
   }
 
+  class_call(parser_read_double(pfc,"tilde_m_nu",&param1,&flag1,errmsg),
+               errmsg,
+               errmsg);
+  if (flag1 == _TRUE_){
+    class_test(pba->N_ncdm!=0, errmsg, "Passing tilde_m_nu only works if all neutrinos are massless, but you currently have N_ncdm = %d", pba->N_ncdm);
+    phr->tilde_m_nu = param1;
+    phr->has_tilde_m_nu = _TRUE_;
+  }
 
   /** 2) Parameters for the the matter density number count */
   if ((ppt->has_cl_number_count == _TRUE_) || (ppt->has_cl_lensing_potential == _TRUE_)) {
@@ -6023,6 +6031,9 @@ int input_default_params(struct background *pba,
   ppt->l_tensor_max=500;
   ppt->l_lss_max=300;
 
+
+  phr->has_tilde_m_nu = _FALSE_;
+  phr->tilde_m_nu = 0.0;
   /** 2) Parameters for the the matter density number count */
   /** 2.a) Selection functions W(z) of each redshift bin */
   ppt->selection=gaussian;
