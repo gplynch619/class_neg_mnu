@@ -228,8 +228,9 @@ struct fzerofun_workspace {
 
 struct tilde_m_nu_workspace {
   struct file_content fc;
-  int * l_max;
+  int l_max;
   double * Cl_pp_tilde_mnu;
+  int * l_arr;
   int tilde_mnu_sign;
   enum computation_stage required_computation_stage;
 };
@@ -287,23 +288,10 @@ extern "C" {
                            ErrorMsg errmsg);
 
   int input_tilde_m_nu(struct file_content * pfc,
-                    struct precision * ppr,
-                    struct background *pba,
-                    struct thermodynamics *pth,
-                    struct perturbations *ppt,
-                    struct transfer *ptr,
-                    struct primordial *ppm,
                     struct harmonic *phr,
-                    struct fourier * pfo,
-                    struct lensing *ple,
-                    struct distortions *psd,
-                    struct output *pop,
-                    int input_verbose,
-                    int * has_shooting,
                     ErrorMsg errmsg);
 
-  int input_compute_tilde_m_nu_Al(void * voidptmw,
-                                double * output,
+  int input_compute_tilde_m_nu_Clpp(void * voidptmw,
                                 ErrorMsg errmsg);
   /* Functions related to shooting */
 

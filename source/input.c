@@ -454,25 +454,17 @@ int input_read_from_file(struct file_content * pfc,
 }
 
 int input_tilde_m_nu(struct file_content * pfc,
-                   struct precision * ppr,
-                   struct background *pba,
-                   struct thermodynamics *pth,
-                   struct perturbations *ppt,
-                   struct transfer *ptr,
-                   struct primordial *ppm,
                    struct harmonic *phr,
-                   struct fourier * pfo,
-                   struct lensing *ple,
-                   struct distortions *psd,
-                   struct output *pop,
-                   int input_verbose,
-                   int * has_shooting,
                    ErrorMsg errmsg){
 
   /** Summary: */
 
   /** Define local variables */
   int index_tilde_m_nu;
+  int i;
+  double tilde_mnu;
+  double param;
+  double flag;
   
   /* We need to remember that we shot so we can clean up properly */
 
@@ -499,26 +491,36 @@ int input_tilde_m_nu(struct file_content * pfc,
   }
 
   strcpy(tmw.fc.name[index_tilde_m_nu], "m_ncdm"); //
-  tmw.fc.value[index_tilde_m_nu] = fabs(tmw.fc.value[index_tilde_m_nu]); //replace with absolute value (physical masses only positive)
+  class_sprintf(tmw.fc.value[index_tilde_m_nu], "%f", fabs(phr->tilde_m_nu));
 
   // now do it for the other ones that we need to fill
 
   strcpy(tmw.fc.name[pfc->size], "T_ncdm"); 
-  tmw.fc.value[pfc->size] = 0.71611;
+  class_sprintf(tmw.fc.value[pfc->size], "%f", 0.71611);
   strcpy(tmw.fc.name[pfc->size+1], "N_ncdm");
-  tmw.fc.value[pfc->size+1] = 1; 
+  class_sprintf(tmw.fc.value[pfc->size+1], "%d", 1);
   strcpy(tmw.fc.name[pfc->size+2], "N_ur");
-  tmw.fc.value[pfc->size+2] = 2.0308; //TODO: change these to not be hardcoded 
+  class_sprintf(tmw.fc.value[pfc->size+2], "%f", 2.0308);
 
   tmw.required_computation_stage = cs_spectra;
-  tmw.tilde_mnu_sign = phr->tilde_m_nu / fabs(phr->tild_m_nu);
+  tmw.tilde_mnu_sign = phr->tilde_m_nu / fabs(phr->tilde_m_nu);
 
   //tmw is now set up to compute
 
-  }
+  input_compute_tilde_m_nu_Clpp(&tmw, errmsg);
 
-int input_compute_tilde_m_nu_Al(void * voidptmw,
-                                double * output,
+  memcpy(phr->tilde_m_nu_clpp, tmw.Cl_pp_tilde_mnu, (tmw.l_max+1)*sizeof(double));
+  memcpy(phr->tilde_m_nu_l_arr, tmw.l_arr, (tmw.l_max+1)*sizeof(int));
+
+  parser_free(&(tmw.fc));
+
+  /** Free arrays allocated */
+  free(tmw.Cl_pp_tilde_mnu);
+  free(tmw.l_arr);
+
+}
+
+int input_compute_tilde_m_nu_Clpp(void * voidptmw,
                                 ErrorMsg errmsg){
 
   struct precision pr;        /* for precision parameters */
@@ -529,11 +531,195 @@ int input_compute_tilde_m_nu_Al(void * voidptmw,
   struct primordial pm;       /* for primordial spectra */
   struct harmonic hr;          /* for output spectra */
   struct fourier fo;        /* for non-linear spectra */
+  struct lensing le;          /* for lensed spectra */
+  struct distortions sd;      /* for spectral distortions */
+  struct output op;           /* for output files */
 
-  struct tilde_m_nu_workspace * pfzw;
+  int input_verbose;
+  int flag;
+  int param;
+  struct tilde_m_nu_workspace * ptmw;
+
+  double ** cl_md_ic; /* array with argument
+                         cl_md_ic[index_md][index_ic1_ic2*phr->ct_size+index_ct] */
+
+  double ** cl_md;    /* array with argument
+                         cl_md[index_md][index_ct] */
+  double * cl_unlensed;  /* cl_unlensed[index_ct] */
+  int index_md;
+  int l;
+  int i;
+
+  ptmw = (struct tilde_m_nu_workspace *) voidptmw;
+
+  class_call(input_read_precisions(&(ptmw->fc),&pr,&ba,&th,&pt,&tr,&pm,&hr,&fo,&le,&sd,&op,
+                                   errmsg),
+             errmsg,
+             errmsg);
+
+  class_call(input_read_parameters(&(ptmw->fc),&pr,&ba,&th,&pt,&tr,&pm,&hr,&fo,&le,&sd,&op,
+                                   errmsg),
+             errmsg,
+             errmsg);
+
+  class_call(parser_read_int(&(ptmw->fc),"input_verbose",&param,&flag,errmsg),
+             errmsg,
+             errmsg);
+
+  if (flag == _TRUE_)
+    input_verbose = param;
+  else
+    input_verbose = 0;
+
+  //optimize flags here for Cl_pp computation
+
+  if (ptmw->required_computation_stage >= cs_background){
+    if (input_verbose>2)
+      printf("Stage 1: background\n");
+    ba.background_verbose = 0;
+    class_call_except(background_init(&pr,&ba), ba.error_message, errmsg, background_free_input(&ba);thermodynamics_free_input(&th);perturbations_free_input(&pt););
+  }
+
+  if (ptmw->required_computation_stage >= cs_thermodynamics){
+    if (input_verbose>2)
+      printf("Stage 2: thermodynamics\n");
+    pr.thermo_Nz_lin = 10000;
+    pr.thermo_Nz_log = 500;
+    th.thermodynamics_verbose = 0;
+    th.hyrec_verbose = 0;
+    class_call_except(thermodynamics_init(&pr,&ba,&th), th.error_message, errmsg, background_free(&ba);thermodynamics_free_input(&th);perturbations_free_input(&pt););
+  }
+
+  if (ptmw->required_computation_stage >= cs_perturbations){
+    if (input_verbose>2)
+      printf("Stage 3: perturbations\n");
+    pt.perturbations_verbose = 0;
+    class_call_except(perturbations_init(&pr,&ba,&th,&pt), pt.error_message, errmsg, thermodynamics_free(&th);background_free(&ba);perturbations_free_input(&pt););
+  }
+
+  if (ptmw->required_computation_stage >= cs_primordial){
+    if (input_verbose>2)
+      printf("Stage 4: primordial\n");
+    pm.primordial_verbose = 0;
+    class_call_except(primordial_init(&pr,&pt,&pm), pm.error_message, errmsg, perturbations_free(&pt);thermodynamics_free(&th);background_free(&ba));
+  }
+
+  if (ptmw->required_computation_stage >= cs_nonlinear){
+    if (input_verbose>2)
+      printf("Stage 5: nonlinear\n");
+    fo.fourier_verbose = 0;
+    class_call_except(fourier_init(&pr,&ba,&th,&pt,&pm,&fo), fo.error_message, errmsg, primordial_free(&pm);perturbations_free(&pt);thermodynamics_free(&th);background_free(&ba));
+  }
+
+  if (ptmw->required_computation_stage >= cs_transfer){
+    if (input_verbose>2)
+      printf("Stage 6: transfer\n");
+    tr.transfer_verbose = 0;
+    class_call_except(transfer_init(&pr,&ba,&th,&pt,&fo,&tr), tr.error_message, errmsg, fourier_free(&fo);primordial_free(&pm);perturbations_free(&pt);thermodynamics_free(&th);background_free(&ba));
+  }
+
+  if (ptmw->required_computation_stage >= cs_spectra){
+    if (input_verbose>2)
+      printf("Stage 7: spectra\n");
+    hr.harmonic_verbose = 0;
+    class_call_except(harmonic_init(&pr,&ba,&pt,&pm,&fo,&tr,&hr),hr.error_message, errmsg, transfer_free(&tr);fourier_free(&fo);primordial_free(&pm);perturbations_free(&pt);thermodynamics_free(&th);background_free(&ba));
+  }
+
+  /* copy cl_pp over */
+  class_alloc(ptmw->Cl_pp_tilde_mnu,
+              (hr.l_max_tot+1)*sizeof(double),
+              errmsg);
+  
+  class_alloc(ptmw->l_arr,
+              (hr.l_max_tot+1)*sizeof(double),
+              errmsg); 
+
+  class_alloc(cl_unlensed,
+              hr.ct_size*sizeof(double),
+              errmsg);
+
+  class_alloc(cl_md_ic,
+              hr.md_size*sizeof(double *),
+              errmsg);
+
+  class_alloc(cl_md,
+              hr.md_size*sizeof(double *),
+              errmsg);
+
+  ptmw->l_max = hr.l_max_tot;
+
+  for (index_md = 0; index_md < hr.md_size; index_md++) {
+
+    if (hr.md_size > 1)
+
+      class_alloc(cl_md[index_md],
+                  hr.ct_size*sizeof(double),
+                  errmsg);
+
+    if (hr.ic_size[index_md] > 1)
+
+      class_alloc(cl_md_ic[index_md],
+                  hr.ic_ic_size[index_md]*hr.ct_size*sizeof(double),
+                  errmsg);
+  }
 
 
-  pfzw = (struct fzerofun_workspace *) voidpfzw;
+
+  for (l=2; l<=hr.l_max_tot; l++) {
+    class_call(harmonic_cl_at_l(&hr,l,cl_unlensed,cl_md,cl_md_ic),
+               hr.error_message,
+               errmsg);
+    //cl_tt[l] = cl_unlensed[ple->index_lt_tt];
+    ptmw->Cl_pp_tilde_mnu[l] = cl_unlensed[hr.index_ct_pp];
+    ptmw->l_arr[l] = l;
+  }
+
+  /** Free structures */
+
+  free(cl_md_ic);
+  free(cl_md);
+  free(cl_unlensed);
+
+  if (ptmw->required_computation_stage >= cs_spectra){
+    class_call(harmonic_free(&hr), hr.error_message, errmsg);
+  }
+  if (ptmw->required_computation_stage >= cs_transfer){
+    class_call(transfer_free(&tr), tr.error_message, errmsg);
+  }
+  if (ptmw->required_computation_stage >= cs_nonlinear){
+    class_call(fourier_free(&fo), fo.error_message, errmsg);
+  }
+  if (ptmw->required_computation_stage >= cs_primordial){
+    class_call(primordial_free(&pm), pm.error_message, errmsg);
+  }
+  if (ptmw->required_computation_stage >= cs_perturbations){
+    class_call(perturbations_free(&pt), pt.error_message, errmsg);
+  }
+  if (ptmw->required_computation_stage >= cs_thermodynamics){
+    class_call(thermodynamics_free(&th), th.error_message, errmsg);
+  }
+  if (ptmw->required_computation_stage >= cs_background){
+    class_call(background_free(&ba), ba.error_message, errmsg);
+  }
+
+
+  /** Set filecontent to unread */
+  for (i=0; i<ptmw->fc.size; i++) {
+    ptmw->fc.read[i] = _FALSE_;
+  }
+
+  /** Free pointers allocated on input if neccessary */
+  if (ptmw->required_computation_stage < cs_perturbations) {
+    /** Some pointers in ppt may not be allocated if has_perturbations is _FALSE_, but this is handled in perturbations_free_input as neccessary. */
+    perturbations_free_input(&pt);
+  }
+  if (ptmw->required_computation_stage < cs_thermodynamics) {
+    thermodynamics_free_input(&th);
+  }
+  if (ptmw->required_computation_stage < cs_background) {
+    background_free_input(&ba);
+  }
+  return _SUCCESS_;
 
 }
 
@@ -4764,6 +4950,15 @@ int input_read_parameters_spectra(struct file_content * pfc,
     class_test(pba->N_ncdm!=0, errmsg, "Passing tilde_m_nu only works if all neutrinos are massless, but you currently have N_ncdm = %d", pba->N_ncdm);
     phr->tilde_m_nu = param1;
     phr->has_tilde_m_nu = _TRUE_;
+    class_alloc(phr->tilde_m_nu_clpp,
+              (ppt->l_scalar_max+1)*sizeof(double),
+              errmsg);
+    class_alloc(phr->tilde_m_nu_l_arr,
+                (ppt->l_scalar_max+1)*sizeof(int),
+              errmsg);
+    class_alloc(phr->ddl_tilde_m_nu_clpp,
+               (ppt->l_scalar_max+1)*sizeof(double),
+                errmsg);
   }
 
   /** 2) Parameters for the the matter density number count */

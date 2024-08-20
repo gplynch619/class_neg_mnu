@@ -1329,6 +1329,8 @@ int harmonic_compute_cl(
 
       /* we have the correct C_l now. We can store it in the transfer structure. */
 
+      /* TODO multiply here tilde mnu*/
+
       phr->cl[index_md]
         [(index_l * phr->ic_ic_size[index_md] + index_ic1_ic2) * phr->ct_size + index_ct]
         = clvalue;
