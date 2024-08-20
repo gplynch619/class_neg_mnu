@@ -453,6 +453,89 @@ int input_read_from_file(struct file_content * pfc,
 
 }
 
+int input_tilde_m_nu(struct file_content * pfc,
+                   struct precision * ppr,
+                   struct background *pba,
+                   struct thermodynamics *pth,
+                   struct perturbations *ppt,
+                   struct transfer *ptr,
+                   struct primordial *ppm,
+                   struct harmonic *phr,
+                   struct fourier * pfo,
+                   struct lensing *ple,
+                   struct distortions *psd,
+                   struct output *pop,
+                   int input_verbose,
+                   int * has_shooting,
+                   ErrorMsg errmsg){
+
+  /** Summary: */
+
+  /** Define local variables */
+  int index_tilde_m_nu;
+  
+  /* We need to remember that we shot so we can clean up properly */
+
+  struct tilde_m_nu_workspace tmw;
+
+  /* Create file content structure with additional entries */
+  class_call(parser_init(&(tmw.fc),
+                          pfc->size+3, // we will reuse the tilde_m_nu spot with m_ncdm, and then need to allocat N_ur, N_ncdm_ and T_ncdm
+                          pfc->filename,
+                          errmsg),
+              errmsg,errmsg); // this allocates the arrays in tmw.fc but does not fill them
+
+  /* Copy input file content to the new file content structure: */
+  memcpy(tmw.fc.name, pfc->name, pfc->size*sizeof(FileArg));
+  memcpy(tmw.fc.value, pfc->value, pfc->size*sizeof(FileArg));
+  memcpy(tmw.fc.read, pfc->read, pfc->size*sizeof(short)); // now we have filled them
+  
+  /* find index of tilde_m_nu so that it can be replaced in the temporary fc with m_ncdm*/
+  for(i=0; i<pfc->size; i++){
+    if(strcmp(pfc->name[i],"tilde_m_nu") == 0){
+      index_tilde_m_nu = i;
+      break;
+    }
+  }
+
+  strcpy(tmw.fc.name[index_tilde_m_nu], "m_ncdm"); //
+  tmw.fc.value[index_tilde_m_nu] = fabs(tmw.fc.value[index_tilde_m_nu]); //replace with absolute value (physical masses only positive)
+
+  // now do it for the other ones that we need to fill
+
+  strcpy(tmw.fc.name[pfc->size], "T_ncdm"); 
+  tmw.fc.value[pfc->size] = 0.71611;
+  strcpy(tmw.fc.name[pfc->size+1], "N_ncdm");
+  tmw.fc.value[pfc->size+1] = 1; 
+  strcpy(tmw.fc.name[pfc->size+2], "N_ur");
+  tmw.fc.value[pfc->size+2] = 2.0308; //TODO: change these to not be hardcoded 
+
+  tmw.required_computation_stage = cs_spectra;
+  tmw.tilde_mnu_sign = phr->tilde_m_nu / fabs(phr->tild_m_nu);
+
+  //tmw is now set up to compute
+
+  }
+
+int input_compute_tilde_m_nu_Al(void * voidptmw,
+                                double * output,
+                                ErrorMsg errmsg){
+
+  struct precision pr;        /* for precision parameters */
+  struct background ba;       /* for cosmological background */
+  struct thermodynamics th;           /* for thermodynamics */
+  struct perturbations pt;         /* for source functions */
+  struct transfer tr;        /* for transfer functions */
+  struct primordial pm;       /* for primordial spectra */
+  struct harmonic hr;          /* for output spectra */
+  struct fourier fo;        /* for non-linear spectra */
+
+  struct tilde_m_nu_workspace * pfzw;
+
+
+  pfzw = (struct fzerofun_workspace *) voidpfzw;
+
+}
 
 /**
  * In CLASS, we call 'shooting' the process of doing preliminary runs
